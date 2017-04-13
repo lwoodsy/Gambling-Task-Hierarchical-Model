@@ -1,0 +1,282 @@
+---
+title: "MT ANOVAS"
+author: "Summer Clay"
+date: "Monday, September 07, 2015"
+output: word_document
+---
+
+### Model Overview
+* Dependent Variable(s)
+    + Reaction Time   
+* Independent Variable(s)
+    + Accept (Accept, Reject)
+    + Card Number (1, 3, 5)
+    + Deck Type (Win, Loss)
+    + Block (1, 2, 3)
+    + Confidence (Weak, Strong)
+
+### Data Wrangling
+  + Read in text file `DDMtask.txt` to dataframe `DDMtask`
+  + Rename variable according to R style guide
+  + Turn `subject`, `trial`, `accept`, `card.number`, `deck.type`, `cond.block`, `confidence` variables into R factors
+  + Organize missing values into `NA` factor level
+```{r, echo = FALSE}
+# Read in data
+DDMtask <- read.delim("C:/Users/Summer/Desktop/DDMtask.txt")
+# Stylize names
+names(DDMtask) <- c("subject", "trial", "accept", "rt", 
+                    "card.number", "deck.type", "block", 
+                    "gamble.outcome", "gamble.win", "confidence")
+```
+
+```{r, echo = FALSE}
+# Transform 'accept', 'card.number', deck.type', 
+# 'cond.block', 'confidence' as factors
+DDMtask$subject <- as.factor(DDMtask$subject)
+DDMtask$accept <- as.factor(DDMtask$accept)
+DDMtask$card.number <- as.factor(DDMtask$card.number)
+DDMtask$deck.type <- as.factor(DDMtask$deck.type)
+DDMtask$confidence <- as.factor(DDMtask$confidence)
+# Streamline missing values into 'NA'
+levels(DDMtask$accept) <- c("Reject", "Accept", NA)
+levels(DDMtask$deck.type) <- c("Loss", "Win")
+levels(DDMtask$block) <- c(1, 2, 3, 1, 2, 3)
+levels(DDMtask$confidence) <- c("Weak", "Strong", NA)
+# remove cases where rt < 200ms
+DDMtask.clean <- subset(DDMtask, rt >= 200)
+```
+
+### Descriptives: Reaction Time (Var 1) vs. logged Reaction Time (Var 2)
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# log reaction time
+DDMtask.clean$log.rt <- log(DDMtask.clean$rt)
+# Check descriptives
+library(psych);
+library(knitr);
+library(pastecs);
+library(stargazer);
+library(broom);
+kable(describe(cbind(DDMtask.clean$rt, DDMtask.clean$log.rt)), digits = 2)
+```
+
+### Reminder for checking for normality
+
+Normality?        | Positive           | Negative
+------------      |----------------    |--------------
+Skew              | too many low scores| too many high scores
+Kurtosis          | heavy-tailed       | light-tailed
+
+  + The further the value (skew or kurtosis) from zero, the more likely the distribution is not normal
+  + Normally distributed scores will result in a straight diagonal line in the Q-Q plot. 
+
+### Histogram of Reaction Time
+```{r, echo = FALSE, results = "hide", message = FALSE, fig.width = 4, fig.height = 3}
+# load packages
+library(ggplot2);
+```
+
+``` {r, echo = FALSE, message = FALSE, fig.width = 4, fig.height = 3}
+# create histogram object
+hist.rt <- ggplot(DDMtask.clean, aes(rt)) + geom_histogram(aes(y = ..density..)) + labs(x = "Reaction Time", y = "Density") + theme_bw() + stat_function(fun = dnorm, args = list(mean = mean(DDMtask.clean$rt, na.rm = TRUE), sd = sd(DDMtask.clean$rt, na.rm = TRUE)), color = "red", size = 1);                                                                                                                                             
+# display
+print(hist.rt)
+```
+
+### Q-Q plot of Reaction Time
+```{r, echo = FALSE, message = FALSE, fig.width = 4, fig.height = 3}
+# q-q plot
+qqplot.rt <- qplot(sample = DDMtask.clean$rt, stat = "qq") + theme_bw();
+print(qqplot.rt)
+```
+
+### Histogram of logged Reaction Time
+``` {r, echo = FALSE, message = FALSE, fig.width = 4, fig.height = 3}
+# histogram
+hist.log.rt <- ggplot(DDMtask.clean, aes(log.rt)) + geom_histogram(aes(y = ..density..)) + labs(x = "Reaction Time", y = "Density") + theme_bw() + stat_function(fun = dnorm, args = list(mean = mean(DDMtask.clean$log.rt, na.rm = TRUE), sd = sd(DDMtask.clean$log.rt, na.rm = TRUE)), color = "red", size = 1);                                                                                                                                             
+print(hist.log.rt)
+```
+
+### Q-Q plot of logged Reaction Time
+```{r, echo = FALSE, message = FALSE, fig.width = 4, fig.height = 3}
+# q-q plot
+qqplot.log.rt <- qplot(sample = DDMtask.clean$log.rt, stat = "qq") + theme_bw();
+print(qqplot.log.rt)
+```
+
+
+
+**Check that multilevel model is needed:**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+library(nlme);
+library(pander)
+library(xtable)
+# check that we need a multilevel model
+intercept.only <- gls(log.rt ~ 1, data = DDMtask.clean, method = "ML")
+random.intercept.only <- lme(log.rt ~ 1, random = ~1|subject, data = DDMtask.clean, method = "ML", na.action = na.exclude, control = list(opt = "optim"))
+# stargazer(intercept.only, random.intercept.only, type = "html", title = "Fixed vs. Random Intercept Only Models", digits = 2)
+```
+
+**Fixed Intercept only model**
+```{r, echo = FALSE}
+summary(intercept.only)
+```
+
+**Random Intercept only model**
+```{r, echo = FALSE}
+summary(random.intercept.only)
+```
+
+
+```{r, echo = FALSE, results = "asis", message = FALSE}
+need.mlm <- anova(intercept.only, random.intercept.only)
+# stargazer(need.mlm, summary = FALSE, type = "html", title = "Compare Fixed Intercept and Random Intercept Models", digits = 2, omit = c("call", "Model"))
+```
+
+**Compare Fixed Intercept vs. Random Intercept**
+```{r, echo = FALSE}
+need.mlm
+```
+
+  
+**Fixed Effect Model**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+trial.fixed <- update(random.intercept.only, .~. + trial)
+# stargazer(trial.fixed, type = "html", title = "Trial as Fixed Effect, No Predictors")
+```
+
+```{r, echo = FALSE}
+summary(trial.fixed)
+```
+
+
+**Random Effect Model**
+In this model, the intercept and the effect of trial vary across subjects.
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+trial.random <- update(trial.fixed, random = ~trial|subject)
+# stargazer(trial.random, type = "html", title = "Trial as Random Effect, No Predictors")
+```
+
+```{r, echo = FALSE}
+summary(trial.random)
+```
+
+
+**Full Effect Model with Predictor Deck Type**
+In this model, the intercept and the effect of trial vary across subjects, AND the interaction between deck type and block is used as a fixed coefficient predictor.
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.one <- update(trial.random, .~. + deck.type)
+# stargazer(model.one, type = "html", title = "Trial as Random Effect, Deck as Predictor")
+# stargazer(model.one$coeff)
+```
+
+```{r, echo = FALSE}
+summary(model.one)
+```
+
+
+**Full Effect Model with Predictors Deck Type & Block**
+In this model, the intercept and the effect of trial vary across subjects, AND the interaction between deck type and block is used as a fixed coefficient predictor.
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.two <- update(model.one, .~. + block)
+# stargazer(model.two, type = "html", title = "Trial as Random Effect, Deck & Block as Predictors")
+```
+
+```{r, echo = FALSE}
+summary(model.two)
+```
+
+**Full Effect Model with Predictors Deck Type, Block, Card Number**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.three <- update(model.two, .~. + card.number)
+```
+
+```{r, echo = FALSE}
+summary(model.three)
+```
+
+
+**Full Effect Model with Predictors Deck Type, Block, Card Number, Accept**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.four <- update(model.three, .~. + accept)
+```
+
+```{r, echo = FALSE}
+summary(model.four)
+```
+
+
+**Full Effect Model with Predictors Deck Type, Block, Card Number, Accept, Confidence**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.five <- update(model.four, .~. + confidence)
+```
+
+```{r, echo = FALSE}
+summary(model.five)
+```
+
+
+**Full Effect Model with Predictors Deck Type, Card Number, Accept, Confidence; Block is removed**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.six <- update(model.one, .~. + card.number + accept + confidence)
+```
+
+```{r, echo = FALSE}
+summary(model.six)
+```
+
+
+
+#### The DV, Reaction Time, is not logged
+**Full Effect Model with Predictors Deck Type, Card Number, Accept, Confidence; Block is removed**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.seven <- update(model.six, rt ~.)
+```
+
+```{r, echo = FALSE}
+summary(model.seven)
+```
+
+
+**Full Effect Model with Predictors Deck Type, Card Number, Accept, Confidence, and DeckType:Confidence**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.eight <- update(model.seven, .~. + deck.type:confidence)
+```
+
+```{r, echo = FALSE}
+summary(model.eight)
+```
+
+**Full Effect Model with Predictors Deck Type, Card Number, Accept, Confidence, and CardNumber:Confidence**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.nine <- update(model.seven, .~. + card.number:confidence)
+```
+
+```{r, echo = FALSE}
+summary(model.nine)
+```
+
+
+**Full Effect Model with Predictors Deck Type, Card Number, Accept, Confidence, CardNumber:Confidence, and Accept:Confidence**
+```{r, echo = FALSE, results = "asis", message = FALSE}
+# update model to include time as a fixed effect
+model.ten <- update(model.nine, .~. + accept:confidence)
+```
+
+```{r, echo = FALSE}
+summary(model.ten)
+plot(rt ~ trial, data = DDMtask.clean)
+lines(predict(model.ten))
+```
+
+
